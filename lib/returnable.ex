@@ -26,7 +26,73 @@ defmodule Returnable do
 
   defmodule Return do
     @moduledoc false
-    def return(sig, value), do: throw {__MODULE__, sig, value}
+    def return(value, id), do: throw {__MODULE__, value, id}
+  end
+
+  defmodule AST do
+    @moduledoc false
+    def transform(id, block) do
+      # The macro is nestable. We only want to alter return calls for the level
+      # of nesting we're currently on. Recursive evaluations of the macro will
+      # handle the returns further down.
+      {block, 0} = Macro.traverse(block, 0,
+        fn
+          # Keep track of our nexting level. We only want to mess with things on
+          # the first level of nexting (acc == 0) because recursive invocations
+          # of the macro will take care of the rest.
+          {:returnable, _meta, _args} = node, acc -> {node, acc+1}
+
+          # Pipes are weird.
+          {:|>, meta, args}, 0 ->
+            args = Enum.map(args, fn
+              {:return, meta, args} -> {:return, meta, List.wrap(args) ++ [id]}
+              node -> node
+            end)
+
+            {{:|>, meta, args}, 0}
+
+          {:return, meta, args}, 0 ->
+            args = case List.wrap(args) do
+              [] -> [nil, id]
+              [^id] -> [id]
+              args -> args ++ [id]
+            end
+
+            {{:return, meta, args}, 0}
+
+          node, acc -> {node, acc}
+        end,
+
+        fn
+          {:returnable, _meta, _args} = node, acc -> {node, acc-1}
+          node, acc -> {node, acc}
+        end
+      )
+
+      block
+    end
+
+    def debug(block) do
+      Macro.traverse(block, 0,
+        fn
+          {op, _meta, args} = node, acc ->
+            IO.puts("+++ #{acc} #{inspect {op, args}}")
+            if op == :|> do
+              IO.puts "#####################"
+              Enum.each(args, &IO.inspect/1)
+              IO.puts "#####################"
+            end
+            {node, acc}
+
+          node, acc -> IO.puts("+++ #{acc} #{inspect node}"); {node, acc}
+        end,
+
+        fn
+          {op, _meta, args} = node, acc -> IO.puts("--- #{acc} #{inspect {op, args}}"); {node, acc}
+          node, acc -> IO.puts("--- #{acc} #{inspect node}"); {node, acc}
+        end
+      )
+    end
   end
 
   @doc """
@@ -87,38 +153,47 @@ defmodule Returnable do
       end
 
   """
-  defmacro returnable(block)
-  defmacro returnable(do: block) do
-    sig = :crypto.strong_rand_bytes(8)
+  defmacro returnable(args \\ nil, block)
+  defmacro returnable(args, do: block) do
+    id = :crypto.strong_rand_bytes(8)
     |> Base.encode16()
 
-    # This macro is nestable. We only want to alter return calls for the level
-    # of nesting we're currently on. Recursive evaluations of the macro will
-    # handle the return alterations further down.
+    # allowed
 
-    {block, _} = Macro.traverse(block, 0,
-      fn
-        {:returnable, _meta, _args} = node, acc -> {node, acc+1}
-        {:return, meta, nil}, 0 -> {{:return, meta, [sig, nil]}, 0} # Bare return
-        {:return, meta, []}, 0 -> {{:return, meta, [sig, nil]}, 0}  # Parens return()
-        {:return, meta, args}, 0 -> {{:return, meta, [sig | args]}, 0}
-        node, acc -> {node, acc}
-      end,
-
-      fn
-        {:returnable, _meta, _args} = node, acc -> {node, acc-1}
-        node, acc -> {node, acc}
-      end
-    )
+    block = AST.transform(id, block)
 
     quote do
       try do
         import Returnable.Return
         unquote(block)
       catch
-        {Returnable.Return, unquote(sig), v} -> v
+        {Returnable.Return, v, unquote(id)} -> v
       end
     end
+  end
+
+  defmacro foo(args, do: block) do
+    IO.inspect(args)
+    quote do
+      unquote(block)
+    end
+  end
+
+  def test do
+    block = quote do
+      return
+      5
+    end
+
+    AST.transform(:FOO, block)
+
+    # block = quote do
+    #   "test" |> return()
+    #   "foo"
+    # end
+
+    # # AST.debug(block)
+    # AST.transform(:FOO, block)
   end
 
 end

@@ -130,4 +130,58 @@ defmodule ReturnableTest do
     assert x == 1
   end
 
+  test "works with pipes (parens)" do
+    x = returnable do
+      "foo" |> return()
+      "bar"
+    end
+
+    assert x == "foo"
+  end
+
+  test "works with pipes (bar)" do
+    x = returnable do
+      "foo" |> return
+      "bar"
+    end
+
+    assert x == "foo"
+  end
+
+  test "works with deep pipes (parens)" do
+    x = returnable do
+      "foo"
+      |> String.upcase()
+      |> return()
+      "bar"
+    end
+
+    assert x == "FOO"
+  end
+
+  test "works with deep pipes (bare)" do
+    x = returnable do
+      "foo"
+      |> String.upcase()
+      |> return
+      "bar"
+    end
+
+    assert x == "FOO"
+  end
+
+  test "pipes and nesting" do
+    x = returnable do
+      returnable do
+        "foo"
+        |> return
+        "bar"
+      end
+      |> return
+      "baz"
+    end
+
+    assert x == "foo"
+  end
+
 end

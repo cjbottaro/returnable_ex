@@ -1,13 +1,29 @@
 defmodule Returnable.MixProject do
   use Mix.Project
 
+  @source_url "https://github.com/cjbottaro/returnable_ex"
+
   def project do
     [
       app: :returnable,
-      version: "1.0.0",
+      version: "0.1.0",
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      description: "Early returns for Elixir",
+      package: [
+        maintainers: ["Christopher J. Bottaro"],
+        licenses: ["MIT"],
+        links: %{"GitHub" => @source_url},
+      ],
+
+      # Docs
+      name: "Returnable",
+      source_url: @source_url,
+      homepage_url: @source_url,
+      docs: [
+        main: "Returnable", # The main page in the docs
+      ]
     ]
   end
 
@@ -21,9 +37,7 @@ defmodule Returnable.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      # {:dep_from_hexpm, "~> 0.3.0"},
-      # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
-      {:ex_doc, "~> 0.1", only: :dev}
+      {:ex_doc, "~> 0.1", only: :dev, runtime: false}
     ]
   end
 end
