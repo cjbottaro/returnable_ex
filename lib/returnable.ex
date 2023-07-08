@@ -2,8 +2,7 @@ defmodule Returnable do
   @moduledoc """
   Early returns for code blocks.
 
-  This module kind of encapsulates the idea of using `throw` to implement early
-  returns:
+  This module encapsulates the idea of using `throw` to implement early returns:
 
       try do
         IO.puts "here"
@@ -22,6 +21,35 @@ defmodule Returnable do
       end
 
   See `returnable/1` for more info.
+
+  ## Implementation
+
+  Each returnable block has a unique id to prevent errant throws.
+
+  The following code:
+
+      returnable do
+        v = returnable do
+          return 123
+        end
+        return v
+      end
+
+  Gets expanded to something like:
+
+      try do
+        v = try do
+          throw {:return, "580A6F14DF3DCEDF", 123}
+        catch
+          {:return, "580A6F14DF3DCEDF", value} -> value
+        end
+        throw {:return, "FC15AD6C01E08BE5", v}
+      catch
+        {:return, "FC15AD6C01E08BE5", value} -> value
+      end
+
+  This way things downstream can't randomly throw something that causes an early
+  return. I'm not sure if this is necessary though.
   """
 
   defmodule CompileError do
