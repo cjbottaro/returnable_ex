@@ -32,39 +32,47 @@ defmodule Returnable do
   defmodule AST do
     @moduledoc false
     def transform(id, block) do
-      # The macro is nestable. We only want to alter return calls for the level
-      # of nesting we're currently on. Recursive evaluations of the macro will
-      # handle the returns further down.
-      {block, 0} = Macro.traverse(block, 0,
+      {block, {0, 0}} = Macro.traverse(block, {0, 0},
         fn
-          # Keep track of our nexting level. We only want to mess with things on
-          # the first level of nexting (acc == 0) because recursive invocations
+          # Keep track of our nesting level. We only want to mess with things on
+          # the first level of nesting (nest == 0) because recursive invocations
           # of the macro will take care of the rest.
-          {:returnable, _meta, _args} = node, acc -> {node, acc+1}
+          {:returnable, _meta, _args} = node, {nest, pipe} -> {node, {nest+1, pipe}}
 
-          # Pipes are weird.
-          {:|>, meta, args}, 0 ->
-            args = Enum.map(args, fn
-              {:return, meta, args} -> {:return, meta, List.wrap(args) ++ [id]}
-              node -> node
-            end)
+          # Keep track of our piping level. If we're in a pipe, then we should
+          # have one less arg in our return calls.
+          {:|>, _meta, _args} = node, {0, pipe} -> {node, {0, pipe+1}}
 
-            {{:|>, meta, args}, 0}
-
-          {:return, meta, args}, 0 ->
-            args = case List.wrap(args) do
-              [] -> [nil, id]
-              [^id] -> [id]
+          # Nesting level 0 and not in a pipe.
+          {:return, meta, args}, {0, 0} ->
+            args = case args do
+              nil -> [nil, id] # Empty bare return
+              [] -> [nil, id]  # Empty parens return()
               args -> args ++ [id]
             end
+            {{:return, meta, args}, {0, 0}}
 
-            {{:return, meta, args}, 0}
+          # Nesting level 0 and in a pipe.
+          {:return, meta, args}, {0, pipe} ->
+            args = case args do
+              nil -> [id] # Empty bare return
+              [] -> [id]  # Empty parens return()
+              args -> args ++ [id]
+            end
+            {{:return, meta, args}, {0, pipe}}
 
+          # All other nodes.
           node, acc -> {node, acc}
         end,
 
         fn
-          {:returnable, _meta, _args} = node, acc -> {node, acc-1}
+          # Decrement our level of nesting.
+          {:returnable, _meta, _args} = node, {nest, pipe} -> {node, {nest-1, pipe}}
+
+          # Decrement our level of piping.
+          {:|>, _meta, _args} = node, {0, pipe} -> {node, {0, pipe-1}}
+
+          # All other nodes.
           node, acc -> {node, acc}
         end
       )
@@ -154,7 +162,7 @@ defmodule Returnable do
 
   """
   defmacro returnable(args \\ nil, block)
-  defmacro returnable(args, do: block) do
+  defmacro returnable(_args, do: block) do
     id = :crypto.strong_rand_bytes(8)
     |> Base.encode16()
 
