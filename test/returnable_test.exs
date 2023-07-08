@@ -184,44 +184,16 @@ defmodule ReturnableTest do
     assert x == "foo"
   end
 
-  test "allowed vars" do
-    x = "foo"
-    v = returnable x do
-      x
+  test "works inside a macro" do
+    require TestHelper
+
+    v = TestHelper.macro do
+      returnable do
+        return x
+      end
     end
 
     assert v == "foo"
-  end
-
-  test "multiple allowed vars" do
-    word = "BAR"
-    x = "foo"
-    y = "bar"
-
-    v = returnable [word, x, y] do
-      case String.downcase(word) do
-        ^x -> String.downcase(x) |> return
-        ^y -> String.downcase(y) |> return
-      end
-    end
-
-    assert v == "bar"
-  end
-
-  test "nested allowed vars" do
-    x = "foo"
-    y = "bar"
-    z = "baz"
-
-    v = returnable [x, y, z] do
-      if x == y, do: return z
-      returnable z do
-        return z
-        "foo"
-      end
-    end
-
-    assert v == z
   end
 
 end

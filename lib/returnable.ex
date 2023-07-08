@@ -31,14 +31,13 @@ defmodule Returnable do
 
   defmodule Return do
     @moduledoc false
-    def return(value, id), do: throw {__MODULE__, value, id}
+    def return(value, id), do: throw {__MODULE__, id, value}
   end
 
   defmodule AST do
     @moduledoc false
-    def transform(id, block, opts \\ []) do
-      allowed = Keyword.get(opts, :allowed, nil)
 
+    def transform(id, block) do
       {block, {0, 0}} = Macro.traverse(block, {0, 0},
         fn
           # Keep track of our nesting level. We only want to mess with things on
@@ -68,18 +67,6 @@ defmodule Returnable do
             end
             {{:return, meta, args}, {0, pipe}}
 
-          # Variable references.
-          {var, _meta, nil} = node, {0, pipe} ->
-            if allowed do
-              if var in allowed do
-                {node, {0, pipe}}
-              else
-                raise CompileError, "variable '#{var}' is not allowed in this returnable scope"
-              end
-            else
-              {node, {0, pipe}}
-            end
-
           # All other nodes.
           node, acc -> {node, acc}
         end,
@@ -87,6 +74,7 @@ defmodule Returnable do
         fn
           # Decrement our level of nesting.
           {:returnable, _meta, _args} = node, {nest, pipe} -> {node, {nest-1, pipe}}
+          {:using, _meta, _args} = node, {nest, pipe} -> {node, {nest-1, pipe}}
 
           # Decrement our level of piping.
           {:|>, _meta, _args} = node, {0, pipe} -> {node, {0, pipe-1}}
@@ -120,6 +108,7 @@ defmodule Returnable do
         end
       )
     end
+
   end
 
   @doc """
@@ -180,37 +169,20 @@ defmodule Returnable do
       end
 
   """
-  defmacro returnable(args \\ nil, block)
-  defmacro returnable(args, do: block) do
+  defmacro returnable(block)
+  defmacro returnable(do: block) do
     id = :crypto.strong_rand_bytes(8)
     |> Base.encode16()
 
-    allowed = case args do
-      nil -> nil
-      args ->
-        List.wrap(args)
-        |> Enum.map(fn
-          {var, _meta, nil} -> var
-          _any -> raise CompileError, "allowed variables must be a bare word or list of bar words"
-        end)
-    end
+    block = AST.transform(id, block)
 
-    block = AST.transform(id, block, allowed: allowed)
-
-    quote location: :keep do
+    quote do
       try do
         import Returnable.Return
         unquote(block)
       catch
-        {Returnable.Return, v, unquote(id)} -> v
+        {Returnable.Return, unquote(id), v} -> v
       end
-    end
-  end
-
-  defmacro foo(args, do: block) do
-    IO.inspect(args)
-    quote do
-      unquote(block)
     end
   end
 
