@@ -24,6 +24,11 @@ defmodule Returnable do
   See `returnable/1` for more info.
   """
 
+  defmodule CompileError do
+    @moduledoc false
+    defexception [:message]
+  end
+
   defmodule Return do
     @moduledoc false
     def return(value, id), do: throw {__MODULE__, value, id}
@@ -31,7 +36,9 @@ defmodule Returnable do
 
   defmodule AST do
     @moduledoc false
-    def transform(id, block) do
+    def transform(id, block, opts \\ []) do
+      allowed = Keyword.get(opts, :allowed, nil)
+
       {block, {0, 0}} = Macro.traverse(block, {0, 0},
         fn
           # Keep track of our nesting level. We only want to mess with things on
@@ -60,6 +67,18 @@ defmodule Returnable do
               args -> args ++ [id]
             end
             {{:return, meta, args}, {0, pipe}}
+
+          # Variable references.
+          {var, _meta, nil} = node, {0, pipe} ->
+            if allowed do
+              if var in allowed do
+                {node, {0, pipe}}
+              else
+                raise CompileError, "variable '#{var}' is not allowed in this returnable scope"
+              end
+            else
+              {node, {0, pipe}}
+            end
 
           # All other nodes.
           node, acc -> {node, acc}
@@ -162,15 +181,23 @@ defmodule Returnable do
 
   """
   defmacro returnable(args \\ nil, block)
-  defmacro returnable(_args, do: block) do
+  defmacro returnable(args, do: block) do
     id = :crypto.strong_rand_bytes(8)
     |> Base.encode16()
 
-    # allowed
+    allowed = case args do
+      nil -> nil
+      args ->
+        List.wrap(args)
+        |> Enum.map(fn
+          {var, _meta, nil} -> var
+          _any -> raise CompileError, "allowed variables must be a bare word or list of bar words"
+        end)
+    end
 
-    block = AST.transform(id, block)
+    block = AST.transform(id, block, allowed: allowed)
 
-    quote do
+    quote location: :keep do
       try do
         import Returnable.Return
         unquote(block)
@@ -185,23 +212,6 @@ defmodule Returnable do
     quote do
       unquote(block)
     end
-  end
-
-  def test do
-    block = quote do
-      return
-      5
-    end
-
-    AST.transform(:FOO, block)
-
-    # block = quote do
-    #   "test" |> return()
-    #   "foo"
-    # end
-
-    # # AST.debug(block)
-    # AST.transform(:FOO, block)
   end
 
 end
